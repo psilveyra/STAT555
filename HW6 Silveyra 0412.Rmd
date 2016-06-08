@@ -1,0 +1,447 @@
+---
+title: "Comparing RNA-seq and Microarray Differential Expression - Part 1 (28 points)"
+author: Patricia Silveyra
+date: March 25, 2016
+output: html_document
+---
+
+```{r require}
+require(edgeR)
+require(limma)
+require(sagenhaft)
+require(hexbin)
+```
+
+Part 1:
+1. Quality control and normalization of the RNA-seq data.
+2. **edgeR** differential expression analysis of the RNA-seq data.
+3. **voom** differential expression analysis of the RNA-seq data.
+4. Rough comparison of the **edgeR** and **voom** analyses using a Venn diagram.
+
+## Create the RNA-seq count matrix.
+1. Create a list of file names.
+2. Read the first file.  It has a gene identifier "gi" which we will use for the merge.
+3. Give the expression column a unique name based on the treatment "AA" or "CT" and the file number.  We pull out the "AA" or "CT" using the **substr** command.  The 2 letters are in position 11 and 12.
+4. For each subsequent file
++ a. Read in the file.
++ b. Give the expression column a unique name based on the treatment "AA" or "CT" and the file number.
++ c. Merge the new column into the counts matrix based on the gene id.  This induces "NA" whenever a gene id is missing in one of the samples.
+
+
+```{r readData}
+setwd("~/Desktop/classes/STATS 555 2016/homework/HW6/RatRNASeq")
+files=dir(pattern="bowtie")
+files
+readRats=read.table(files[1],header=T)
+names(readRats)=c("gi",paste(substr(files[1],11,12),1,sep=""))
+
+for (i in 2:length(files)) {
+tab=read.table(files[i],header=TRUE)
+names(tab)=c("gi",paste(substr(files[i],11,12),i,sep=""))
+readRats=merge(readRats,tab,by="gi",all=T)
+}
+dim(readRats)
+head(readRats)
+```
+
+We assume that the gene ids were missing in some samples because there were no reads attributed to those genes.  We therefore need to replace  the "NA"s with 0 using the **is.na** command.
+
+## Homework Question 1: (1 points) 
+
+a) Insert your command for this replacement into the .Rmd file.
+```{r}
+readRats[is.na(readRats)]=0
+```
+
+Currently the first column of the count matrix is the gene id.  It is preferable to have the ids as the row names.  The code for this is below.
+```{r fixMatrix}
+rownames(readRats)=readRats[,1]
+readRats=readRats[,2:9]
+head(readRats)
+```
+You are now ready for some basic quality assessment.  
+
+
+## Homework Question 2 (6 points)
+
+a) Draw a histogram of log2(counts) for each sample.  (Remember to add 1/4 or 1/2 so there are no zeroes).  Are there any notable problems with the samples?
+```{r logReads}
+logReads=log2(readRats+0.25)
+```
+
+```{r}
+par(mfrow=c(2,4))
+for (i in 1:8) hist(logReads[,i], main=colnames(readRats)[i])
+```
+
+I can see from the plot there is a large number of features with very low counts, from genes with very low expression or no expression.
+
+
+b) Use **hexplom** to draw scatterplots of the log2(counts).  Are there any notable problems?
+```{r}
+plot(hexplom(logReads))
+```
+
+I see that the controls compare very well with each other. I can also see the genes with low or no expression in the lower left side of the graphs. When comparing the control vs. the treatment, I see the expected differences. However, I am concerned because the replicates in the group treated with the aristolochic acid do not correlate with each other as well as the controls do.  
+
+
+c) Compute the total library size for each of the 8 libraries.  Are there any unusually large or small libraries?
+```{r}
+colSums(readRats)
+```
+
+The library size of samples AA1 and CT5 are almost half of the size of the rest of the samples. Therer is also some variability among the control samples. 
+
+
+d) I always sum up the reads for each feature and look at features with lots of reads.  Insert the commands to do this into your Rmd file.  Are there any features taking up more than 3% of the "read space"?
+
+```{r}
+rowstot=rowSums(readRats)
+max(rowstot)
+```
+
+```{r biggenes}
+maxp=function(v) max(v)/sum(v)*100
+apply(readRats,2,maxp)
+```
+
+
+e) As well, I discard features with fewer than 10 reads in all the samples as there is no power to detect differential expression analysis for features with very low total counts.  Create a new count matrix with genes with at least 10 reads per feature and call it **bigRats** to match my commands that follow.  How many genes are left in the data?
+
+```{r filter,echo=FALSE,eval=T}
+TotalCounts=rowSums(readRats)
+par(mfrow=c(1,1))
+hist(log2(TotalCounts+.25))
+sum(TotalCounts<10)
+max(TotalCounts)/sum(TotalCounts)
+```
+
+```{r bigReads}
+bigRats=readRats[TotalCounts>=10,]
+dim(bigRats)
+```
+
+There are 22778 genes left (27317 minus 4539 with less than 10) 
+
+Notice that we discarded features that have few reads in any sample.  We still have features that have no reads in some samples, as long as they have enough reads overall.
+
+We should redo the histograms and check that they have the same shape.  This is not a required element of the homework.
+
+```{r bigHist}
+par(mfrow=c(2,4))
+lBig=log2(bigRats+0.25)
+for (i in 1:8) hist(lBig[,i],main=colnames(readRats)[i])
+```
+
+The histograms no longer show the high frequency of low values.
+
+
+Finally, I like to cluster the samples to get the big picture of whether there are differences among genotypes.
+I use correlation and complete linkage clustering, although other choices could certainly be made.
+
+```{r clusterSamples}
+par(mfrow=c(1,1))
+lBig=(bigRats+0.5)
+dist=as.dist(1-cor(lBig))
+plot(hclust(dist))
+```
+
+
+## Homework Question 3: (2 points)
+
+ What is your biological interpretation of the cluster dendrogram of samples?
+
+The samples from the same treatments cluster together, as expected. In addition, I can see that sample CT5 clusters separated from CT6, 7 and 8, and this could be related to the lower number of reads found for CT5 vs. the other 3. The samples in the treatment group are separated in two clusters, and this could be related to inter-individual overall differences in gene expression.
+
+
+## RNA-seq Normalization
+
+I usually do some type of normalization to equalize the library sizes.  
+I usually use TMM (Robinson \& Olshack, 2010) which performed well in comparison with other methods. This method is available in the **edgeR** package.  
+
+We now load the **edgeR** package, and put the data along with the normalization factors into a ``**DGEList**" object.  We also create a treatments variable using the first 2 letters of the column names.
+
+```{r edger}
+require(edgeR)
+treatments=substr(colnames(bigRats),1,2)
+treatments
+d=DGEList(counts=bigRats, group=treatments,genes=rownames(bigRats))
+d=calcNormFactors(d,method="TMM")
+```
+
+Next we compute the average "common" dispersion.  
+
+```{r CommonDispersion}
+d=estimateCommonDisp(d)
+d$common.dispersion
+```
+
+
+## Homework Question 4: (3 points)
+
+a) Recall that in the primate liver data the common dispersion was about 0.16, but it is 
+much smaller for these data.  Briefly, why might you expect the dispersion to be smaller among laboratory rats than among primates?  (Consider both genetic and environmental factors.)
+
+I would expect the dispersion to be smaller among laboratory rats because these are inbred and they should be genetically identical. In addition, these are housed together in titny cages and fed the same diet, therefore I expect less variability. Unfortunately the paper does not say if the rats were male or female (or mixed), but I assumed they were males, which usually have less variability.
+
+
+b) Suppose that a gene has mean expression 100.  What is the variance of expression if the expression distribution is Poisson?  What is it if the expression distribution has dispersion 0.16?  What about 0.07?
+
+Poisson:
+variance = 100
+
+var=mean(1+mean*disp)
+
+Dispersion = 0.16
+variance=100(1+100*0.16)=1700
+
+Dispersion = 0.07
+variance=100(1+100*0.07)=800
+
+
+## Differential Expression Analysis - **edgeR**
+
+The first step in **edgeR** analysis is the estimation of the moderated dispersion.
+The amount of shrinkage is controlled by the  parameter **prior**. Larger values create more shrinkage.  The default value is **prior=10**. To understand the degree of dispersion, we try several values.
+
+```{r dispersion}
+d0=estimateTagwiseDisp(d,prior=0)
+d4=estimateTagwiseDisp(d,prior=4)
+d10=estimateTagwiseDisp(d,prior=10)
+d20=estimateTagwiseDisp(d,prior=20)
+boxplot(d0$tagwise.dispersion,d4$tagwise.dispersion,d10$tagwise.dispersion,d20$tagwise.dispersion,
+names=paste(c(0,4,10,20)))
+```
+
+These data are very well-behaved with no huge dispersions. So we can go directly to the differential expression analysis.  I suggest using  **prior=10**.  There appears to be little extra-Poisson variation.
+ 
+ Since there are only 2 conditions (AA=treated with aristolochic acid and CT=untreated), we can use the **exactTest** command.
+ 
+```{r qval}
+qval=function(p){
+  m=length(p)
+  ord=order(p)
+  pi0=min(2*sum(p>0.5)/m,1)
+  q=pi0*m*p/rank(p)
+  q[ord[m]]=min(q[ord[m]],1)
+  for (i in (m-1):1){
+  q[ord[i]]=min(q[ord[i]],q[ord[i+1]],1)
+}
+list(pi0=pi0,qval=q)
+}
+```
+ 
+ 
+## Homework Question 5: (6 points)
+
+a)  Using "d10" do the differential expression analysis and draw the histogram of p-values.  Is the shape of the histogram reasonable for multiple testing adjustment?
+
+```{r RNAseq8}
+AAvsCT=exactTest(d10,pair=c("AA","CT"))
+head(AAvsCT$table)
+hist(AAvsCT$table[,3], main="p-values", xlab="p-values")
+```
+
+b)  What is the estimated value of $\pi_0$ the percentage of genes that do not differentially express?
+
+```{r}
+nonsignif=sum(AAvsCT$table[,3]>0.05)
+nonsignif
+pi0=nonsignif/22778
+pi0
+```
+55% of genes do not differentially express (estimated based on p values)
+
+c) Use the function you created in the microarray homework  to compute the q-values.  How many genes have $q\le 0.05$?  Save the list of gene ids of the significant genes in a vector named "edgeRid" (and include the command for this in the Sweave file.)
+
+I used Storey's q-values
+
+```{r}
+pvalues=(AAvsCT$table[,3])
+qvalues=qval(pvalues)
+sum(qvalues$qval<0.05)
+qvalues$pi0
+```
+
+10372 genes have q less than 0.05. PiO is 43%
+
+```{r}
+edgeRid=AAvsCT$genes[AAvsCT$table<0.05]
+```
+I did this for the genes with p-values
+
+
+d) Print out a table with the 10 genes with the smallest q-values, their raw expression values and the estimated fold-change.
+
+```{r}
+order=order(edgeRid)
+orderQ=order(qvalues$qval)
+ExprV=AAvsCT[orderQ,][1:10,]
+ExprV[1:10,]
+```
+
+
+```{r DE}
+DE.edgeR=exactTest(d10,pair=c("AA","CT"))
+```
+
+```{r histP}
+hist(DE.edgeR$table[,3],main="p-values edgeR",breaks=50)
+```
+
+```{r pAdj,eval=T}
+qval=function(p){
+  m=length(p)
+  ord=order(p)
+  pi0=min(2*sum(p>0.5)/m,1)
+  q=pi0*m*p/rank(p)
+  q[ord[m]]=min(q[ord[m]],1)
+  for (i in (m-1):1){
+  q[ord[i]]=min(q[ord[i]],q[ord[i+1]],1)
+}
+list(pi0=pi0,qval=q)
+}
+edgeRq=qval(DE.edgeR$table[,3])
+edgeRq$pi0
+sum(edgeRq$q<=0.05)
+edgeRid=rownames(bigRats[edgeRq$q<=0.05,])
+```
+
+
+## RNA-seq analysis using **voom**
+
+Next we will redo the differential expression analysis using the **voom** command in **LIMMA**.
+
+**voom** uses the counts and the effective library sizes computed by **edgeR**.  It requires a model matrix, which we  compute using the **treatments** variable.  After the initial fit, we have an estimated mean and variance for each population.  **voom** computes the a nonparametric fit of the sqrt(SD) regressed on the mean similar to lowess.  The **sqrt** seems to come from an empirical observation that the spread of the sqrt(SD) is more stable than the spread of the SD or the variance.
+
+## Estimating the nonparametric fit
+
+We use **d**  which was computed in the section on **edgeR**.  We also need to compute a design matrix.  Until I am more familiar with **voom** I will continue to ask for the plot which shows the **nonparametric** fit.
+
+## Homework Question 6: (2 points)
+
+Compute the design matrix and store it in a matrix named **design**.
+
+```{r design,echo=FALSE}
+require(limma)
+design=model.matrix(~0+treatments)
+colnames(design)=c("AA","CT")
+```
+
+Next the **voom** model is fitted to obtain weights for the final linear model.
+
+```{r voom}
+require(limma)
+v=voom(d,design,plot=TRUE)
+```
+
+
+For each gene, a genewise linear model is fitted to the normalized counts per million (CPM) reads, where the normalizing factor is the effective library size computed by TMM. This gives an estimated CPM for each gene under each treatment and an estimated variance (of CPM) based on residuals.  As I understand it, the variance is then transformed back to the log2(count+.5) scale, and the $\sqrt(SD)$ is regressed on the log2(counts+.5).  (See the figure.)
+
+
+
+**voom** then computes a weight for each *observation* in a rather odd way.  First it computes the estimated CPM for the observation based on the fitted linear model (i.e. the estimated population mean).  Using the effective library size, this observation is converted to an estimate of *log2(count + 0.5)*.  The estimated variance is computed from the value on the mean-variance trend curve.  The weight for that observation is 1/variance.
+
+
+## **LIMMA** fit
+
+The next step is simply to fit the model and the contrasts in the usual way using the **voom** output in place of the expression or count matrix.
+
+
+## Homework Question 7: (6 points)
+
+a) Using "v" do the differential expression analysis and draw the histogram of p-values.  Is the shape of the histogram reasonable for multiple testing adjustment?
+
+```{r}
+fit=lmFit(v,design)
+contrast.matrix=makeContrasts(AAvsCT=AA-CT,levels=design)
+fit.contrast=contrasts.fit(fit,contrast.matrix)
+efit.contrast=eBayes(fit.contrast)
+hist(efit.contrast$p.value,main="Control vs. AA",xlab="p-values")
+```
+
+Yes, the shape of the histogram is ok.
+
+
+b) What is the estimated value of $\pi_0$ the percentage of genes that do not differentially express?
+
+I used Storey's again
+
+```{r}
+qvalues1=qval(efit.contrast$p.value)
+sum(qvalues1$qval<0.05)
+qvalues1$pi0
+```
+
+12569 genes have q less than 0.05. PiO is 33.4%
+
+
+c) Compute the q-values and save the output in a file called **voomq**.  How many genes have $q\le 0.05$?  Save the list of gene ids of the significant genes in a vector named "voomid" (and include the command for this in the Sweave file.)
+
+```{r}
+voomq=qval(efit.contrast$p.value[,1])
+voomq$pi0
+```
+
+```{r}
+voomid=efit.contrast$genes[efit.contrast$p.value<0.05]
+```
+again, I used p-values here
+
+
+d) Print out a table with the 10 genes with the smallest q-values, their raw expression values and the estimated fold-change.
+
+```{r}
+order1=order(voomid)
+orderQ1=order(voomq$qval)
+ExprV1=AAvsCT[orderQ1,][1:10,]
+ExprV1[1:10,]
+```
+
+
+```{r fitVoom,echo=FALSE}
+qval=function(p){
+  m=length(p)
+  ord=order(p)
+  pi0=min(2*sum(p>0.5)/m,1)
+  q=pi0*m*p/rank(p)
+  q[ord[m]]=min(q[ord[m]],1)
+  for (i in (m-1):1){
+  q[ord[i]]=min(q[ord[i]],q[ord[i+1]],1)
+}
+list(pi0=pi0,qval=q)
+}
+fit=lmFit(v,design)
+contrast.matrix=makeContrasts(AAvsCT=AA-CT,
+ levels=design)
+fit.contrast=contrasts.fit(fit,contrast.matrix)
+efit.contrast=eBayes(fit.contrast)
+voomq=qval(efit.contrast$p.value[,1])
+```
+
+Finally lets draw a Venn diagram to see how well the genes selected by **edgeR** and **voom** correspond. Note that the **vennCounts** function uses a matrix of TRUE and FALSE to count the components of the Venn diagram. 
+
+
+## Homework Questions 8: (2 points)
+
+Draw a Venn Diagram (using R) showing the number of genes with $q-value \le 0.05$ for  **edgeR** and **voom**.  Does it look like one method is more powerful?  Support your answer.
+
+```{r}
+vennDiagram(vennCounts(cbind(edgeRq$q<=0.05,voomq$q<=0.05),include="both"),
+names=c("edgeR","voom"))
+```
+
+Looks like voom detects more significant differences than edgeR, therefore is more powerful. However, we do not know how many of these are true/false, as well as the error rates. As you mentioned in the lab, we need to use simulated data to estimate these errors.
+
+
+The next homework will use both these data and the microarray data from the same samples.  We will compare the differential expression measured by RNA-seq to differential expression measured by microarray.
+
+
+# SessionInfo
+
+```{r sessionInfo}
+toLatex(sessionInfo())
+print(gc())
+```
+ 
+

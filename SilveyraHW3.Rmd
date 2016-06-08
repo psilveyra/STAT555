@@ -1,0 +1,210 @@
+---
+title: "Exploratory Data Analysis in R (Homework 3)"
+author: "Patricia Silveyra"
+date: "February 1, 2015"
+output: html_document
+---
+
+**Homework Question 1** (3 points)  
+
+Recall that we have expression values for 2000 genes in 62 samples from 40 patients.  22 patients have both tumor and normal tissue samples.  The remaining 18 patients have only tumor samples.
+Suppose that there is no biologically based differential expression between the healthy and diseased tissues and we do a test for every gene.  
+
+a) About how many significant tests do you expect due to random chance if you declare statistical significance for \(p<.0.05\) ?
+The significant test is the process used to determine whether the null hypothesis is rejected or not. The null hypothesis here is that the genes are not differentially expressed. If we declare statistical significance of 0.05, there is a 5% chance that we will find differential expression due to random chance ("false discoveries"). In this example, we are performing 2000 comparisons for the same sample set. If all the null hypotheses are true, 5% (100 tests) will be found significant due to random chance. 
+
+b) Suppose you drew a histogram of all 2000 p-values.  What would it look like? Justify your answer.  Reference an appropriate reading from the articles on intro statistics in the Week 3 folder.
+The p-value is the output from the statistical test, and represents a probability (ranges from 0-1). If all the tests are null, the p-value's distribution should be uniform.
+Reference: Krzywinski and Altman, Nat. Meth. 10, 1041-1042 (2013)
+
+*****************
+
+**Homework Question 2**  (5 points)
+
+Suppose we are interested in testing for differential expression of genes between normal and cancerous tissue in the same patients:
+
+a) What are some appropriate statistical tests to determine if a gene differentially expresses in different tissue types?
+A t-test will be appropriate to start, assuming that the distribution is normal. There are several types of t-tests. A "paired t-test" could be used in this case, but only for samples that are paired (not all the samples have control and tumor), we would have to ignore the samples that are not paired. We could also use a non paired test for the whole dataset. 
+
+b) What assumptions are required for these tests to be valid?
+t-test assumptions:
+1) normality of response
+2) equal variance between groups
+3) independence
+
+c) What is the advantage of using healthy and diseased tissue from the *same* patients?
+The advantage of using samples from the same patient is that it reduces variability. Coming from the same patient, the differences in gene expression between the control and diseased tissue are more likely due to the disease than to other genetic source. Thus, it is likely that the expression in "normal tissue from all patients" follows a normal distribution with a mean value that is different from the one that will be found if we look at "diseased tissue from all patients". When we compare these two groups we are more likely to find differences in gene expression that are related to the disease, however we will have both biological variability and measurement error in the sample. 
+
+Reference an appropriate reading from the articles on intro statistics in the Week 3 folder:
+Reference: Blainey, Krzywinski, and Altman. "Points of significance: replication." Nature methods 11.9 (2014): 879-880.  
+
+*********************
+Reloading the data:
+```{r}
+source("http://bioconductor.org/biocLite.R")
+biocLite("colonCA")
+library("colonCA")
+data(colonCA)
+colonCA
+```
+
+I created the gene expression matrix and the phenotype data frame, and checked their dimension and first few rows/columns:
+
+```{r}
+colonExprs=exprs(colonCA)
+colonPheno=pData(colonCA)
+class(colonExprs)
+class(colonPheno)
+dim(colonExprs)
+dim(colonPheno)
+colonExprs[1:5,1:5]
+colonPheno[1:5,1:3]
+```
+
+I counted the phenotypes in the colonPheno data frame
+```{r}
+sum(colonPheno$class=="t")
+sum(colonPheno$class=="n")
+```
+
+****************
+
+**Homework Question 3** (3 points)
+
+a)Draw boxplots of all the expression values in the first 6 microarrays on one figure.  Use logarithms base 2 (*log2(x)*) to make the data more symmetric.
+
+First I plotted it as it is, and I see the 62 samples
+
+```{r}
+boxplot(colonExprs)
+```
+
+Then I take the log and to see the difference in the plot (purple plot)
+```{r}
+logcolE=log2(colonExprs)
+boxplot(logcolE,xlab="sample",ylab="expression values",col="purple")
+```
+
+Then I selected microarrays 1-6
+```{r}
+boxplot(logcolE[,1:6],main="First six microarrays with log2",col="purple")
+```
+
+
+b) Read the R documentation on boxplots.  What is the default definition of the whiskers and of outliers on the boxplots?
+Boxplot whiskers represent the most extreme data points of the sample. In the Tukey style, this is no more than 1.5 time the interquartile range (IQR) from the edge of the box. In the Spear style, it is the minimum and maximum of the data values. 
+Outliers are plotted individually outside of the whiskers as open circles.
+
+****************
+
+ **Homework Question 4** (4 points)
+
+a) Draw a scatterplot of gene 15 versus gene 16 with appropriate labels for the x and y axes and a main title.
+
+```{r}
+plot(x=colonExprs[15,],y=colonExprs[16,],xlab="gene15",ylab="gene 16",main="Scatterplot")
+```
+
+b) Use the *points* command to redraw the tumor expression values in red on your plot using a logical operator to select the correct data for both genes.
+I added lines to show expression of 5000 for each gene, and a diagonal line. Also I added a legend, but I could not create the command to make the legend show the red and black points. 
+```{r}
+colont=colonPheno$class=="t"
+colonn=colonPheno$class=="n"
+plot(x=colonExprs[15,],y=colonExprs[16,],xlab="gene15",ylab="gene 16",main="Scatterplot")
+points(colonExprs[15,colont],colonExprs[16,colont],col="red")
+abline(a=0,b=1.5,col="magenta")
+abline(h=5000,col="blue")
+abline(v=5000,col="orange")
+legend(x=6300,y=11000,legend="tumor", text.col="red",pch="o", col="red")
+```
+
+***************
+Scatterplot matrix: compare the log(expression) values on the first 6 microarrays.
+
+```{r}
+pairs(logcolE[,1:6])
+```
+
+****************
+
+**Homework Question 5** (2 points)
+
+Using *colonPheno* you can see that these 6 microarrays come from 3 subjects.
+
+```{r}
+colonPheno[1:6,]
+```
+
+a) What do you notice in the plots that indicates dependence among
+the samples?  What numerical summary can be used to summarize the dependence?
+
+The plots show a distribution of points that look like a diagonal line, indicating the gene expression is fairly similar between the two samples. In some cases, for example between samples 1 and 2, the expression is more similar than between 2 and 3. This represents how variable these two genes are among individuals, and how different their expression is in a tumor and a control from the same patient (samples 1 vs. 2, 3 vs.4 and 5 vs. 6 in this case) I can calculate the correlation coeficient to summarize the dependence, and then compare with what I see in the plot.
+
+
+************
+Download Hexbin
+```{r}
+source("http://bioconductor.org/biocLite.R")
+biocLite("hexbin")
+library(hexbin)
+```
+*****************
+
+**Homework Question 6** (2 points)
+
+a) Use  *hexbin* to plot all the values on the first 2 microarrays on the log2 scale.  
+```{r}
+plot(hexbin(logcolE[,1:2]),xlab="array1",ylab="array2",main="Hexbin plot first two arrays (log)")
+```
+
+b) Then use *hexplom* to plot all the values on the first 6 microarrays. 
+
+```{r}
+plot(hexplom(logcolE[,1:6]))
+```
+
+***********
+
+**Homework Question 7** (3 points)
+
+a) Compute the minimum, maximum, mean, median, SD and IQR for gene 15.
+
+```{r}
+min(colonExprs[15,])
+max(colonExprs[15,])
+median(colonExprs[15,])
+IQR(colonExprs[15,])
+sd(colonExprs[15,])
+```
+
+*****************
+
+**Homework Question 8** (2 points)
+
+a) Compute the correlations of the values on the first 6 microarrays. (The output should be a $6\times 6$ matrix.)
+
+```{r}
+cor(logcolE[,1:6])
+```
+
+I can see that the numeric values for these correlations are representative of what I see in the plot. The higher the coefficient, the closer to a line the graphic looks.
+
+**********
+
+** Homework Question 9} (1 points)
+
+a) Compute a table from *colonPheno\$class* giving the number of samples of each type of tissue.
+
+```{r}
+tumor=colont
+normal=colonn
+table(tumor,normal)
+```
+
+*****************
+
+```{r}
+sessionInfo()
+``` 
+
+

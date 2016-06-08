@@ -1,0 +1,366 @@
+---
+title: "Comparing RNA-seq and Microarray Differential Expression (25 points)"
+author: "Patricia Silveyra"
+date: "April 16, 2016"
+output: html_document
+---
+
+At least 2 different labs did hybridizations of these and 4 additional samples to the Affymetrix arrays.  I picked lab K for this analysis.  
+
+In the last homework you did a differential expression analysis of the RNA-seq data.  In this homework, we will quickly do a differential expression analysis of the Affymetrix arrays and then concentrate on determining how well the information from the two platforms corresponded.  You will need the results of the RNA-seq analysis to complete this homework.
+
+If you need to redo this RNA-seq analysis, you can use code chunks from the last homework and put in the header "echo=FALSE, results='hide'"  This will allow you to rerun all the commands without printing the input and output to this homework.
+
+```{r RNAseq1,echo=FALSE,results='hide'}
+setwd("~/Desktop/STATS 555 2016/homework/HW6/RatRNASeq")
+files=dir(pattern="bowtie")
+files
+readRats=read.table(files[1],header=T)
+names(readRats)=c("gi",paste(substr(files[1],11,12),1,sep=""))
+
+for (i in 2:length(files)) {
+tab=read.table(files[i],header=TRUE)
+names(tab)=c("gi",paste(substr(files[i],11,12),i,sep=""))
+readRats=merge(readRats,tab,by="gi",all=T)
+}
+```
+```{r RNAseq2,echo=FALSE,results='hide'}
+readRats[is.na(readRats)]=0
+```
+```{r RNAseq3,echo=FALSE,results='hide'}
+rownames(readRats)=readRats[,1]
+readRats=readRats[,2:9]
+```
+```{r RNAseq4,echo=FALSE,results='hide'}
+TotalCounts=rowSums(readRats)
+bigRats=readRats[TotalCounts>=10,]
+lBig=log2(bigRats+0.25)
+```
+
+```{r RNAseq5,echo=FALSE,results='hide'}
+require(edgeR)
+treatments=substr(colnames(bigRats),1,2)
+d=DGEList(counts=bigRats, group=treatments,genes=rownames(bigRats))
+d=calcNormFactors(d,method="TMM")
+d=estimateCommonDisp(d)
+d10=estimateTagwiseDisp(d,prior=10)
+DE.edgeR=exactTest(d10,pair=c("AA","CT"))
+```
+
+```{r RNAseq6,echo=FALSE,results='hide'}
+design=model.matrix(~0+treatments)
+colnames(design)=c("AA","CT")
+v=voom(d,design,plot=FALSE)
+```
+
+```{r RNAseq8,echo=FALSE,results='hide'}
+AAvsCT=exactTest(d10,pair=c("AA","CT"))
+head(AAvsCT$table)
+hist(AAvsCT$table[,3], main="p-values", xlab="p-values")
+```
+
+```{r RNAseq7,echo=FALSE,results='hide'}
+fit=lmFit(v,design)
+contrast.matrix=makeContrasts(AAvsCT=AA-CT,
+ levels=design)
+fit.contrast=contrasts.fit(fit,contrast.matrix)
+efit.contrast=eBayes(fit.contrast)
+```
+
+
+The strategy is:
+
+1. Differential expression analysis of the Affymetrix arrays (I have already done quality checks and these arrays look pretty good.)
+2. Match the Affymetrix probeset names to the RNA-seq names which have been recorded as **entrez IDs**.  
+3. Using only the matched genes, compare the expression levels on the microarray and RNA-seq lane for each gene.
+4. Using only the matched genes, compare the differential expression outputs for the microarray and the 2 RNA-seq analyses.
+
+You are going to need the following packages.
+
+```{r libraries}
+require(limma)
+require(affy)
+require(hexbin)
+require(rat2302.db)
+```
+
+We also need our old friend **qval**.
+
+```{r qval,results='hide'}
+qval=function(p){
+  m=length(p)
+  ord=order(p)
+  pi0=min(2*sum(p>0.5)/m,1)
+  q=pi0*m*p/rank(p)
+  q[ord[m]]=min(q[ord[m]],1)
+  for (i in (m-1):1){
+  q[ord[i]]=min(q[ord[i]],q[ord[i+1]],1)
+}
+list(pi0=pi0,qval=q)
+}
+```
+
+
+#Microarray Data
+
+Download the microarray data from ANGEL.  The zip folder also includes some files called (e.g.) "gi2xx".  "gi" are the gene identifiers which were used in the RNAseq analysis.  However, to match the genes to the probesets on the microarray, we need a map to the probeset ids.  I could not find a direct mapping from the "gi" ids to the probeset ids, so we are going to map both the "gi" ids and the probeset ids to the RefSeq ids. 
+
+Read the cel files into an AffyBatch object called **CELdata**.  Instead of changing directories, it turns out you can tell **ReadAffy** which directory the CEL files are in using the input parameter **celfile.path**. I have the cel files in directory **..//LabKCelFiles**.  The commands are below.
+
+```{r ReadAffy,results='hide'}
+require(affy)
+setwd("~/Desktop/STATS 555 2016/homework/HW7/LabKCelFiles")
+celfileDir="..//LabKCelFiles"
+CELdata=ReadAffy(celfile.path=celfileDir)
+rat.rma=rma(CELdata)
+```
+
+
+# Homework Question 1:( 2 points)
+
+What is the name (cdf) of the microarrays and how many probesets does in have?  (Hint: just type the dataset name and the basic information is printed.)
+
+```{r}
+rat.rma
+```
+
+rat2302cdf
+the array has 31099 probesets 
+
+
+I have already checked the data quality, so you can simply use RMA to normalize and then use **limma** to do the differential expression analysis.
+
+The treatments, design and design.contrast are the same as for the **voom** analysis.  However, you will use the rma data to fit the model and the contrasts.  You will need to compute the q-values.
+
+```{r limmaMicro,echo=FALSE,results='hide'}
+fitRMA=lmFit(rat.rma,design)
+fitRMAContrasts=contrasts.fit(fitRMA,contrast.matrix)
+efitRMAContrasts=eBayes(fitRMAContrasts)
+```
+
+
+# Homework Question 2: (8 points)
+
+a)  Do the differential expression analysis and draw the histogram of p-values.  Is the shape of the histogram reasonable for multiple testing adjustment?
+
+```{r}
+hist(efitRMAContrasts$p.value)
+```
+
+The histogram shows a high frequency of features with very low p-values. This is suitable for multiple testing adjustment.
+
+
+b) What is the estimated value of $\pi_0$ the percentage of genes that do not differentially express?
+
+```{r}
+qvaluesest=efitRMAContrasts$p.value>0.05
+sum(qvaluesest)
+sum(qvaluesest)/31099*100
+```
+
+The estimated value is 52% of the features (16290 features)
+
+CORRECTION: Estimated pi0 is the percentage of genes that do not differentially express estimated based on your data, not the actual number of genes with significant p-value. Pleaes read the note about pi0 in the multiple testing correction note. 0.3087559 is the pi0
+
+
+
+c) Compute the q-values.  How many genes have $q\le 0.05$?  Save the list of gene ids of the significant genes in a vector named ``AffySig" (and include the command for this in the Rmd file.)
+
+```{r}
+qvalues2=qval(efitRMAContrasts$p.value)
+qvalues2$pi0
+AffySig=efit.contrast$genes[qvalues2$qval<0.05]
+```
+
+30% of the genes have q less than 0.05. 
+
+d) Print out a table with the 10 genes with the smallest q-values, their raw expression values and the estimated fold-change.
+
+```{r}
+orderd=order(AffySig)
+orderd1=order(qvalues2$qval)
+ExprValues=AAvsCT[orderd1,][1:10,]
+ExprValues[1:10,]
+```
+
+
+#Matching RNA-seq and Affymetrix microarray
+
+The next thing we are going to do is to find the gene models that match probes on the Affymetrix rat 
+microarray, **affy\_rat230\_2** 
+which is the array used for this study.
+This is easier than matching probes on many other types of arrays, because the probesets are mapped to other annotations such as Entrez-IDs and RefSeq-IDs.  This is critical, because the RNA-seq data have been labelled with non-standard gene identifiers.
+
+I will start getting a list of probeset ids for the Affymetrix data.
+
+```{r getProbesets}
+AffyIds=featureNames(rat.rma)
+```
+
+The RNA-seq data have been given non-standard identifiers.  We need to read in the table matching the ``gi" identifiers with annotation that can be matched to the Affymetrix data. The tables I obtained from the authors had the RefSeq, Ensembl and Entrez ids.  We will use the RefSeq ids.  You can download all these tables from ANGEL.
+
+```{r readIDtab}
+IDRefSeq=read.delim("~/Desktop/STATS 555 2016/homework/HW7/LabKCelFiles//Gi2RefSeqID.txt",header=T)
+head(IDRefSeq)
+```
+
+R maintains a number of databases with information about various microarrays and annotations.  If you look at what was printed when you typed the name of the raw dataset, you see that the annotation is **rat2302**.  We will load the database and then see what it contains. 
+
+```{r ratdb}
+library(rat2302.db)
+ls("package:rat2302.db")
+```
+
+
+We see that there is a dataset labeled 
+**rat2302REFSEQ**.  
+This looks like a good bet for containing the RefSeq ids that we want.  
+
+To extract a table of RefSeq ids matching the probeset names, we can select the RefSeq ids corresponding to the probeset names which we saved in **AffyIds**.  The **select** command select retrieve the data as a data.frame based on based on the database, set of identifiers to match (in our case **AffyIds**) and the type of identifiers we want to retrieve, which are the RefSeq ids.
+
+```{r select}
+AffyRefSeq <- select(rat2302.db, AffyIds, "REFSEQ") 
+head(AffyRefSeq)
+```
+
+We note firstly that all the ids for the RNA-seq data start with ``NM" but for each Affymetrix id there appear to be extra annotations that start with ``NP".  On the other hand, there are more then twice as many items in the table as there are AffyIds, so perhaps this does not matter.  Note that in **AffyRefSeq** column 1 is the Affy id and column 2 is the RefSeq id.
+
+
+We will proceed as follows:
+
+1. Select the NM annotations in the Affy table.
+2.  Use  **duplicated** find Affy ids that map to multiple RefSeq ids and remove them from the table.  We want to remove both copies.  (**duplicated** is TRUE when an element *previously* occurred in a list.  So, to find the first time the element was listed we have to check from both ends)  Remove the duplicates.
+3. Use  **duplicated** to remove duplicated RefSeq ids from the RNA-seq ID table.  These are RefSeq ids that map to multiple Affy ids.
+
+The code is below.
+
+(I would not have thought it would be this complicated - but it did take me 3 days to get to the point!)
+
+```{r matchIds}
+NM=substr(AffyRefSeq[,2],1,2)=="NM"
+AffyRefSeq=AffyRefSeq[NM,]
+Affydup=!(duplicated(AffyRefSeq[,1])|duplicated(AffyRefSeq[,1],fromLast=T))
+AffyUniq=AffyRefSeq[Affydup,]
+dim(AffyUniq)
+AffyRefdup=!(duplicated(AffyUniq[,2])|duplicated(AffyUniq[,2],fromLast=T))
+AffyUniq=AffyUniq[AffyRefdup,]
+dim(AffyUniq)
+sum(duplicated(AffyUniq$REFSEQ))
+sum(duplicated(AffyUniq$PROBEID))
+sum(duplicated(IDRefSeq[,2]))
+```
+
+Next we create a table that matches up the Affymetrix probeset ids and GI ids which have the same RefSeq ids using the **match** command.  This leaves some some GI ids which have no match to the remaining Affymetrix probeset.  We also remove these.
+
+```{r makeIDtables}
+m=match(IDRefSeq[,2],AffyUniq[,2])
+AllId=cbind(IDRefSeq[,1:2],AffyUniq[m,])
+head(AllId)
+AllId=AllId[!is.na(AllId$REFSEQ),]
+dim(AllId)
+```
+
+
+# Homework Question 3: (15 points)
+
+Make sure that the R commands for each of the steps below are displayed in your Rmd output.
+
+a) Create a matrix called **AllExprs** containing the RMA-normalized microarray data and the log2(count+1/4) RNA-seq data.  Note that since we computed p-values only for the RNA-seq features with 10 or more reads, this step will further reduce the number of features we are matching.  Do this by 
+by matching the RMA-normalized data to **AllId**  using the PROBEID column and using the **gi** names of your filtered RNA-seq data.  (Remember that the probeset and GI names are the row names of the expression matrix.) It is not clear that this filtering is optimal, since genes that were not detected in the RNA-seq study, might be detected on the microarray.  For assessing matching between the two platforms, this is conservative.
+
+I followed the code you included, but made some modifications to understand what I was doing.
+
+```{r}
+m1=match(AllId$PROBEID,AffyIds)
+m2=match(AllId$GI,rownames(bigRats))
+AllExprs1=cbind(exprs(rat.rma)[m1,],AllId,AffyIds[m1])
+AllExprs=cbind(lBig[m2,],AllExprs1,rownames(bigRats)[m2])
+colnames(AllExprs)
+dim(AllExprs)
+```
+
+b) Remove any rows of the matrix that have missing data. 
+
+```{r}
+missingdata=apply(AllExprs[,c(1:16)],1,function(x) sum(is.na(x)))
+AllExprs=AllExprs[missingdata==0,]
+dim(AllExprs)
+```
+
+114 rows were removed
+
+b) Create a matrix called **AllP** by matching the p-values from the differential expression output in the same way.  Include the output from **edgeR** and **voom** for the RNA-seq data and **limma** for the microarray data.
+
+```{r}
+AllP=efitRMAContrasts$p.v[m1]
+AllP=cbind(AllP,DE.edgeR$table$PValue[m2],efit.contrast$p.v[m2])
+dim(AllP)
+headings=c("limma", "edgeR", "voom")
+colnames(AllP)=headings
+colnames(AllP)
+```
+I included the row names, to make the comparison easier.
+
+I also removed the missing values:
+```{r}
+AllP=AllP[missingdata==0,]
+dim(AllP)
+```
+
+114 rows were removed here too, as expected
+
+
+c) Now that everything is matched up, lets explore the concordance graphically and with correlation.
+Do a **hexplom** plot of the 3 sets of log10(p-values) and also compute the correlation of the p-values.  Are they strongly correlated?
+
+```{r}
+require(hexbin)
+plot(hexplom(log10(AllP[,1:3])))
+cor(log10(AllP[,1:3]))
+```
+Edge and Voom correlate pretty well (about 85%), but the correlation with limma is not very good (30%). Looks like the two RNAseq methods are more similar to each other than they are to the microarray data. This is not surprising, but it is very interesting how little the two sets correlate (I believe that is the point made in the paper).
+
+d) Create a Venn diagram of the genes with $p\le 0.05$ for the 3 analyses.  How well do they match up?
+
+```{r}
+vennDiagram(vennCounts(AllP<=0.05)) 
+```
+
+The microarray data appears to detect more differentially expressed genes than RNAseq seq data. These could be false positives. Overall, about 2100 genes (out of ~6800) were detected to have significatly different expression by all three methods.  
+
+e) Create a Venn diagram of the genes with $q \le 0.05$ for the 3 analyses.  How well do they match up?
+
+need to do this for the Q values!!!
+
+
+f) Do a **hexplom** plot of AA samples 1 and 2 for the microarray and RNA-seq data.  Do they match up well?  Repeat for CT samples 1 and 2.
+
+```{r}
+require(hexbin)
+plot(hexplom(AllExprs[,c(1:2,9:10)]))
+```
+
+```{r concordanceCI,fig.show='hide',echo=FALSE,results='hide'}
+plot(hexplom(AllExprs[,c(5:6,13:14)]))
+```
+
+In both cases, I see that samples of the same treatment correlate well with each other when comparing the same method. However, the correlation is bad when looking at the same sample and comparing both methods. This could be due to the units in which the expression is measured, or to differences in the outcome when the data is normalized.
+
+
+g) Summarize your assessment of the match between the results of the microarray and RNA-seq data.
+
+Both methods detected a significant amount of differences between the two treatments. About 2100 genes were detected by both methods, regardless of the program used to analyze. Edge and voom detected a large amount of differences, and differ in only a couple hundred genes. Limma detected over a thousand genes with p<0.05 that the RNAseq did not. However, the fact that the microarray method detects more differences could mean that the RNAseq is less sensitive to detect changes, or that the microarray detects more false positives. This is not what the paper describes, because they claim that RNAseq is more sensitive to detect changes. In all cases, about 1400 genes did not show differences between treatment and control rats, regardless of the method. 
+
+#SessionInfo
+
+```{r sessionInfo,echo=FALSE}
+sessionInfo()
+
+print(gc())
+```
+ 
+
+
+
+
+

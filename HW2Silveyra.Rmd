@@ -1,0 +1,54 @@
+---
+title: "Homework 2"
+author: "Patricia Silveyra pzs13@psu.edu"
+output: html_document
+---
+
+I started by reading the data from "GSE17274.ReadCountPerLane.csv" 
+
+```{r}
+myData=read.csv("GSE17274_ReadCountPerLane.csv", header = T, sep = ",")
+```
+
+Next, I checked the number of rows and columns  
+
+```{r}
+dim(myData)
+```
+
+next the headers of the 36 columns
+
+```{r}
+colnames(myData)
+```
+
+I printed the first 5 rows to make sure that the data were read in properly. 
+
+```{r}
+head(myData,5)
+```
+
+I obtained the gene-wise total reads
+
+```{r}
+GeneTotal=rowSums(myData[2:37])
+```
+
+to avoid taking logarithms of zeroes, I added a small constant to all numbers, and I got the histogram of total reads per gene (applying logarithm) and changed the main title and color
+
+```{r}
+hist(log2(GeneTotal+0.25), nclass=50, main="Total Reads", col="yellow")
+```
+
+Then I counted the number of genes with zero reads
+
+```{r}
+sum(GeneTotal==0)
+```
+
+Record the Session Information. 
+
+```{r}
+sessionInfo()
+```
+

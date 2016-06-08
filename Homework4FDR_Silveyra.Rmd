@@ -1,0 +1,685 @@
+---
+title: "Homework 4 Multiple Testing and FDR (40 points)"
+author: Patricia Silveyra
+date: "Feb. 11, 2016"
+---
+
+```{r getP}
+tp=function(x,trt) t.test(x~trt)$p.value
+```
+
+**Homework Question 1**  (5 points)
+
+a) Suppose we have a vector "p" with 200 values.  What do the following commands compute?
+
++ i) mean(p)
+This code will give the arithmetic mean of the 200 values in the p vector (sum of values/number of values). Below is an example with 5 values:
+
+```{r}
+p=c(0.1,0.2,0.4,0.6, 0.8, 1)
+sum(p)/length(p)
+```
+
+or 
+
+```{r}
+mean(p)
+```
+
++ ii) mean(p>0.5)
+This code will take "true" values (higher than 0.5, -vs. "false" values-lower than 0.5), and then calculate the proportion of true values (sum of values higher than 0.5/total number of values). Below is an example:
+
+```{r}
+sum(p>0.5)/length(p)
+```
+
+or 
+
+```{r}
+mean(p>0.5)
+```
+
++ iii) mean(p[p>0.5])
+This code will take the mean of all the elements of p that are higher are higher than 0.5. (sum of values higher than 0.5/number of values higher than 0.5). Below is an example:
+
+```{r}
+a=p>0.5
+sum(p[p>0.5])/sum(a=="TRUE")
+```
+
+or 
+
+```{r}
+mean(p[p>0.5])
+```
+
+b) Write two functions to estimate \(\pi_0 \)
+
++ i) pi0PC estimates \(\pi_0 \) using the Pounds and Cheng method.
+
+```{r Pounds and Cheng}
+pi0PC=function(p){pi0=2*mean(p) 
+list(pi0PC=pi0)
+}
+```
+
++ ii) pi0S estimates \(\pi_0 \) using Storey's method using a cut-off at p-value 0.5
+
+```{r Storeys cutoff 0.5}
+pi0S=function(p){pi0=2*mean(p>0.5)
+  list(pi0S=pi0)
+}  
+```
+
+# Storey's Q-values
+
+```{r}
+library(BiocInstaller)
+biocLite("qvalue")
+library(qvalue)
+```
+
+# Simulation Part 1: Simulating from the Null with n=5 for each treatment
+
+## Homework Question 2 (2 points)
+
+a) Suppose that there is no difference in the mean between the treatment and control and that the common value of the mean is \(\mu_C=\mu_T=\mu\).  Does the value of \(\mu\) matter to the statistical significance of the t-test?  Briefly explain your answer.
+
+If the mean is the same in the control and treatment, there will be no statistical difference, since the model for t-test is based on differences in means (but the same variance). The value of mu does not matter, what matters is the difference between muC and muT, and the distribution of expression values. 
+
+
+b) Suppose that there is no difference in the mean between the treatment and control and that the variance of the observations is \(\sigma^2_C=\sigma^2_T=\sigma^2\) in both groups.  Does the value of \(\sigma^2\) matter to the statistical significance of the test?  Briefly explain your answer.
+
+If the mean and the variance are the same in the control and treatment, there will be no statistical difference. It does not matter what value sigma is as long as there is no difference in the treatment and the control.
+
+
+***************
+We start with no treatment effects: \(\mu_C=\mu_T=8\).
+```{r means}
+M <- 1000 # number of "genes"
+N <- 5  # number of samples in each of two groups
+treat=matrix(rnorm(M*N,mean=8,sd=1),nr=M,nc=N)
+control=matrix(rnorm(M*N,mean=8,sd=1),nr=M,nc=N)
+simdata1=cbind(treat,control)
+```
+
+I strongly suggest printing out a small portion of the data to check that it looks OK. 
+
+```{r}
+simdata1[1:10,1:10]
+```
+
+***************
+
+## Homework Question 3 (8 points)
+
+a) Create a vector called myTrt of N "T"s and N "C"s to designate which columns are the treatments and which are the controls.  Include your R commands in the Rmd file. 
+
+```{r}
+myTrt=c("T","T","T","T","T","C","C","C","C","C")
+```
+
+b) Use the *apply*  command and your *tp* function to compute the p-value for for a two-sample t-test to determine if the means are the same for the treatment and control for each row of the data matrix. Include your R commands in the Rmd file.
+
+```{r}
+pvals=apply(simdata1,1,tp,myTrt)
+```
+
+c) Draw a histogram of the p-values.  Does the histogram have the expected shape?  Briefly explain your answer.
+
+```{r}
+hist(pvals,nclass=20,main = "Frequency of p-values", xlab = "p-value")
+```
+Yes, the histogram has the expected shape for the distribution of p-values. We have made all samples with the same mean and equal variance, so the shape of the graph is quite uniform as expected.
+
+d) How many "genes" do you expect to have p<0.05?  How many "genes" actually have p<0.05?  Include your R commands in the Rmd file.
+
+We created data with same mean and variance, so I only expect a proportion of genes (about 5%) with p<0.05 by chance. Since my total is 1000, it will be about 50 genes. 
+The R commmand below confirms it.
+
+```{r}
+sum(pvals<0.05)
+```
+
+e) If you reject the null hypothesis for each gene with p<0.05, what is your estimated FDR (based on the truly null and non-null genes) in this simulation?  Note: Estimated FDR=(false discoveries)/(total discoveries)
+
+The FDR depends on all the p-values on the set. We created data with equal means and variance, so any rejection that we may compute is false. Then, the FDR is 1 (which means 100%).
+
+
+e) Use the Pounds and Cheng function you wrote to estimate \(\pi_0\) the percentage of null tests.  What do you get?
+
+```{r}
+pi0PC(pvals)
+```
+I get a value close to 1.
+
+f) Using the Storey function you wrote, estimate \(\pi_0\).  What do you get?
+
+```{r}
+pi0S(pvals)
+```
+I get a value close to 1.
+
+g) If you use the Bonferroni method, how many of the null hypotheses would you reject at p<0.05?  What is your estimated FDR?  
+
+With bonferroni I do not find any significant values, so now the FDR is 0. 
+
+```{r}
+BF=p.adjust(pvals,method = "bonferroni")
+sum(BF<0.05)
+```
+I plotted the p-values to confirm.
+```{r}
+hist(BF)
+```
+
+h) If you use the Benjamini and Hochberg method, how many of the null hypotheses would you reject at p<0.05?  What is your estimated FDR?  ((Note that there is an R function *p.adjust* which can compute the "BH-adjusted p-values"for you or you can write your own function.)
+
+With bonferroni I do not find any significant values, so now the FDR is 0. 
+
+```{r}
+BH=p.adjust(pvals,method = "BH")
+sum(BH<0.05)
+```
+
+I plotted the p-values to confirm.
+```{r}
+hist(BH)
+```
+
+i) Generate another sample of the same size.  Do you get the same answers for d - h?  Include your results in the html file.
+
+I get the same values (or similar, sum of pvals is 51 in one set and 50 in the other set, but that is expected). This is because the means and standard deviations are the same in the two sets.
+
+```{r}
+simdatab=cbind(treat,control)
+pvals2=apply(simdatab,1,tp,myTrt)
+sum(pvals2<0.05)
+pi0PC(pvals2)
+pi0S(pvals2)
+BF2=p.adjust(pvals2,method = "bonferroni")
+sum(BF2<0.05)
+BH2=p.adjust(pvals2,method = "BH")
+sum(BH2<0.05)
+```
+
+
+***************
+We ``up-regulate'' 100 genes in the treatment group by changing their means to 10, leaving the remaining 900 genes non-differential. We can determine the power of the test if we reject when p<0.05, recalling that we have sample size 5 in both the treatment and control group.  *delta* is the difference in means.  In this case delta=10-8= 2 for the up-regulated genes.
+
+```{r power}
+power.t.test(n=5,delta=2,sd=1,sig.level=0.05)
+```
+So we expect to reject about 79% of the truly non-null genes.
+
+
+************
+## Homework Question 4 (5 points)
+
+Recall that we will generate 1000 genes of which 100 actually have differences in mean expression.  If we reject for p<0.05, we will have power 79%.  
+
+a) How many of the 1000 tests do we expect to reject?
+
+We expect to reject 5% of the null tests (900 genes x 0.05 = 45 tests).
+We expect to reject 79% of the non null ones (100 genes x 0.79 = 79 tests).
+Total = 124 rejected tests
+
+
+b) What should our false discovery rate be if we reject at p<0.05?
+
+FDR is the proportion of total discoveries that are false discoveries 
+FDR = 45 false discoveries / 124 total expected discoveries = 0.36 (36%)
+
+
+c) What should our false non-discovery rate be if we reject at p<0.05?
+
+False nondiscovery rate is the proportion of total non discoveries (non rejected tests) that are non discoveries
+Total tests = 1000
+Total discoveries = 124
+Total non-discoveries = 876
+We expect to reject only 79 tests of the 100 discoveries, so the rest will be false non discoveries. -> Total false non-discoveries = 100-79 = 21
+False nondiscovery rate (FNR) = 21 / 876 = 0.024 (2.4%)
+
+
+d) How many total errors will we make if we reject at p<0.05?
+
+45 false discoveries + 21 false nondiscoveries = 66 total errors
+
+
+e) Suppose that each false discovery costs us \$1 (in wasted follow-up effort) and each false non-discovery costs us \$5 (in lost opportunity). Which will reduce our total cost more - increasing or decreasing the p-value at which we reject?
+
+cost of false discoveries = 45*$1 = $45
+cost of false nondiscoveries = 21*$5 = $105
+
+If we increase the p-value at which we reject, there will be more false discoveries and less false nondiscoveries. Because the false nondiscoveries are more expensive, this will reduce the cost more. 
+
+
+**************
+## Homework Question 5 (8 points)
+
+a) Regenerate the data, but make the means for the first 100 genes in the treatment group all 10. Call the matrix of simulated gene expression values *sim.data2*  (Include your R code.)  
+I created a matrix of values with mean 10, and I used the command rbind to combine it with the treatments. Then I used cbind to create sim.data2 and checked the dimension.
+
+I created a matrix with the new mean (named it diff)
+
+```{r}
+diff=matrix(rnorm(500,mean=10), ncol=5, nrow=100)
+treat2=rbind(diff, treat[101:1000,])
+sim.data2=cbind(treat2, control)
+dim(sim.data2)
+```
+
+Note: Please check that the means in each of the first 100 rows of the treatment matrix are approximately 10 and the means in the remaining 900 rows are approximately 8. 
+Note: Do NOT change the means in the control group.  In the control group, each gene should have mean 8.
+
+checking the means in the treatment
+
+```{r}
+mean(sim.data2[1:100,1:5])
+mean(sim.data2[101:1000, 1:5])
+```
+
+checking the means in the control
+
+```{r}
+mean(sim.data2[1:100,6:10])
+mean(sim.data2[101:1000, 6:10])
+```
+
+b) Redo the t-tests and compute the p-values. 
+
+```{r}
+pvalsS2=apply(sim.data2,1,tp,myTrt)
+```
+
+c) What should the histogram of p-values look like for the first 100 genes?  What should it look like for the other 900 genes?  Draw the histograms and check.
+
+The histogram for the first 100 p values should have higher frequency for lower p-values, since the means are different. 
+
+The histogram for the other 900 p values should be uniform, since the means remain the same between control and treatment.
+
+```{r}
+pvals100=pvalsS2[1:100]
+hist(pvals100,main = "p-values first 100", xlab = "p-value")
+pvals900=pvalsS2[101:1000]
+hist(pvals900,main = "p-values other 900", xlab = "p-value")
+```
+
+The histograms look different than the original one for the first 100 values. Thhere are very few values bigger than 0.05 in the first 100 samples, because in these I have changed the means, so I expect to reject more tests.
+
+
+d) Draw the histogram of p-values.  Does it have the appropriate shape for using FDR adjustments?
+
+The histogram looks different than the original one. There are less values bigger than 0.1, reflecting the change in the means and more rejected tests. I painted this one blue to distinguish it.
+
+```{r}
+hist(pvalsS2,main = "p-values all genes", xlab = "p-value", col = "blue")
+```
+
+e) How many rejections do you have a p<0.05?  What are your estimated FDR and FNR?  To obtain these, you need to determine how many of the rejections and non-rejections are correct (i.e. the null is false) and how many are true.  Do NOT true to estimate this using the Storey or BH methods - I am looking for an answer based on the accepts and rejects in your simulation.
+
+I calculated rejections as p<0.05, and then estimated true and false discoveries based on what I expect to happen in the first 100 values (with different means) vs. the rest (where the means are equal)
+
+```{r}
+rejections=sum(pvalsS2<0.05)
+truediscoveries=sum(pvals100<0.05)
+falsediscoveries=sum(pvals900<0.05)
+
+rejections
+truediscoveries
+falsediscoveries
+```
+
+FDR
+```{r}
+falsediscoveries/(falsediscoveries+truediscoveries)
+```
+
+I expect ~100 rejections. My FDR is ~30%.
+
+FNR
+```{r}
+falsenondiscoveries=sum(pvals100>0.05)
+truenondiscoveries=sum(pvals900>0.05)
+falsenondiscoveries/(falsenondiscoveries+truenondiscoveries)
+```
+
+My FNR is ~3%
+
+
+f) What are your estimated FDR and FNR if you use the Bonferroni, BH and Storey methods and reject at "adjusted p"<0.05?
+
+I get the adjusted p-values for bonferroni, and calculate the rejections.
+```{r}
+BFS2=p.adjust(pvalsS2,method = "bonferroni")
+rejectionsBFS2=sum(BFS2<0.05)
+rejectionsBFS2
+falsenondiscoveriesBFS2=sum(BFS2>0.05)
+truenondiscoveriesBFS2=sum(BFS2>0.05)
+falsenondiscoveriesBFS2/(falsenondiscoveriesBFS2+truenondiscoveriesBFS2)
+```
+
+I get the adjusted p-values for BH and calculate the number of rejections
+```{r}
+BHS2=p.adjust(pvalsS2, method = "BH")
+rejectionsBHS2=sum(BHS2<0.05)
+rejectionsBHS2
+```
+
+I get the q-value with Storey's and calculate rejections
+```{r}
+Storey=qvalue(pvalsS2, fdr.level = 0.05)
+rejectionsStorey=sum(Storey$significant==TRUE)
+rejectionsStorey
+```
+
+The number of rejections is lower (none for boferroni, and around 8 for BH and Storey's). This is because adjustments and corrections for multiple testing are made.
+
+
+g) What is your estimate of \(\pi_0\)?
+
+```{r}
+pi0S(pvalsS2)
+```
+
+
+***********
+
+This is a recurrent theme in multiple testing ... no matter where we set the threshold 
+we can't get all the changed genes without getting a flood of false positives.  Our simulated data is pretty simple - all the differential genes have the same fairly strong effect.
+When the effect size is smaller, there is less power and for a fixed value of FDR, fewer significant genes will be detected on average while the FNR will be higher.
+
+***********
+
+## Homework Question 6 (8 points)
+
+Redo problems 3 and 5 with N=10 (i.e. 10 samples per group) (but do not redo 3.i).  
+
+***********
+
+Problem 3 again:
+
+I create a new dataset:
+
+```{r}
+M <- 1000 # number of "genes"
+N <- 10  # number of samples in each of two groups
+treatQ6=matrix(rnorm(M*N,mean=8,sd=1),nr=M,nc=N)
+controlQ6=matrix(rnorm(M*N,mean=8,sd=1),nr=M,nc=N)
+simdataQ6=cbind(treatQ6,controlQ6)
+```
+
+a) Create a vector called myTrt of N "T"s and N "C"s to designate which columns are the treatments and which are the controls.  Include your R commands in the Rmd file. 
+
+```{r}
+myTrtQ6=c("T","T","T","T","T","T","T","T","T","T","C","C","C","C","C","C","C","C","C","C")
+myTrtQ6
+```
+
+b) Use the *apply*  command and your *tp* function to compute the p-value for for a two-sample t-test to determine if the means are the same for the treatment and control for each row of the data matrix. Include your R commands in the Rmd file.
+
+```{r}
+pvalsQ6=apply(simdataQ6,1,tp,myTrtQ6)
+```
+
+c) Draw a histogram of the p-values.  Does the histogram have the expected shape?  Briefly explain your answer.
+
+```{r}
+hist(pvalsQ6,nclass=20,main = "Frequency of p-values", xlab = "p-value")
+```
+Yes, the histogram has the expected shape for the distribution of p-values. We have made all samples with the same mean and equal variance, so the shape of the graph is quite uniform as expected, even though the n is higher now.
+
+d) How many "genes" do you expect to have p<0.05?  How many "genes" actually have p<0.05?  Include your R commands in the Rmd file.
+
+We created data with same mean and variance, so I only expect a proportion of genes (about 5%) with p<0.05 by chance. Since my total is 1000, it will be about 50 genes, no matter the n.
+The R commmand below confirms it.
+
+```{r}
+sum(pvalsQ6<0.05)
+```
+
+e) If you reject the null hypothesis for each gene with p<0.05, what is your estimated FDR (based on the truly null and non-null genes) in this simulation?  Note: Estimated FDR=(false discoveries)/(total discoveries)
+
+The FDR depends on all the p-values on the set. We created data with equal means and variance, so any rejection that we may compute is false. Then, the FDR is 1.
+
+
+e) Use the Pounds and Cheng function you wrote to estimate \(\pi_0\) the percentage of null tests.  What do you get?
+
+```{r}
+pi0PC(pvalsQ6)
+```
+I get 0.988765, which is close to 1.
+
+f) Using the Storey function you wrote, estimate \(\pi_0\).  What do you get?
+
+```{r}
+pi0S(pvalsQ6)
+```
+I get 0.96, which is close to 1.
+
+g) If you use the Bonferroni method, how many of the null hypotheses would you reject at p<0.05?  What is your estimated FDR?  
+
+With Bonferroni, the FDR will be 0
+
+```{r}
+BFQ6=p.adjust(pvalsQ6,method = "bonferroni")
+sum(BFQ6<0.05)
+```
+
+h) If you use the Benjamini and Hochberg method, how many of the null hypotheses would you reject at p<0.05?  What is your estimated FDR?  ((Note that there is an R function *p.adjust* which can compute the "BH-adjusted p-values"for you or you can write your own function.)
+
+I will not reject any of the null hypothesis. The estimated FDR should be 0 no matter the method. 
+
+```{r}
+BHQ6=p.adjust(pvalsQ6,method = "BH")
+sum(BHQ6<0.05)
+```
+
+
+----
+Problem 5 again:
+
+a) Regenerate the data, but make the means for the first 100 genes in the treatment group all 10. Call the matrix of simulated gene expression values *sim.data2*  (Include your R code.)  
+I created a matrix of values with mean 10, and I used the command rbind to combine it with the treatments. Then I used cbind to create "sim.data2Q6" and checked the dimension.
+
+I created a matrix with the new mean (named it diff)
+
+```{r}
+diffQ6=matrix(rnorm(500,mean=10), ncol=10, nrow=100)
+treat2Q6=rbind(diffQ6, treatQ6[101:1000,])
+sim.data2Q6=cbind(treat2Q6, controlQ6)
+dim(sim.data2Q6)
+```
+
+Note: Please check that the means in each of the first 100 rows of the treatment matrix are approximately 10 and the means in the remaining 900 rows are approximately 8. 
+Note: Do NOT change the means in the control group.  In the control group, each gene should have mean 8.
+
+checking the means in the treatment
+
+```{r}
+mean(sim.data2Q6[1:100,1:10])
+mean(sim.data2Q6[101:1000, 1:10])
+```
+
+checking the means in the control
+
+```{r}
+mean(sim.data2Q6[1:100,11:20])
+mean(sim.data2Q6[101:1000, 11:20])
+```
+
+b) Redo the t-tests and compute the p-values. 
+
+```{r}
+pvalsS2Q6=apply(sim.data2Q6,1,tp,myTrtQ6)
+```
+
+c) What should the histogram of p-values look like for the first 100 genes?  What should it look like for the other 900 genes?  Draw the histograms and check.
+
+The histogram for the first 100 p values should have higher frequency for lower p-values, since the means are different. Since the n is higher, I expect the frequency of low p-values to be higher.
+
+The histogram for the other 900 p values should be uniform, since the means remain the same between control and treatment.
+
+```{r}
+pvals100Q6=pvalsS2Q6[1:100]
+hist(pvals100Q6,main = "p-values first 100 Q6", xlab = "p-value")
+pvals900Q6=pvalsS2Q6[101:1000]
+hist(pvals900Q6,main = "p-values other 900 Q6", xlab = "p-value")
+```
+
+The histograms look different than the original one for the first 100 values. Thhere are very few values bigger than 0.05 in the first 100 samples, because in these I have changed the means, so I expect to reject more tests. Also, when compared to the previous graph (from the original set), I can note the increase in lower p-values frequency, due to the increase in number of samples.
+
+
+d) Draw the histogram of p-values.  Does it have the appropriate shape for using FDR adjustments?
+
+The histogram looks different than the original one, and the blue one. There are less values bigger than 0.1, reflecting the change in the means and higher n, so more rejected tests are found. I painted this one red to distinguish it.
+
+```{r}
+hist(pvalsS2Q6,main = "p-values all genes Q6", xlab = "p-value", col = "red")
+```
+
+e) How many rejections do you have a p<0.05?  What are your estimated FDR and FNR?  To obtain these, you need to determine how many of the rejections and non-rejections are correct (i.e. the null is false) and how many are true.  Do NOT true to estimate this using the Storey or BH methods - I am looking for an answer based on the accepts and rejects in your simulation.
+
+I re-did the calculations from question 5 in the new set.
+
+```{r}
+rejectionsQ6=sum(pvalsS2Q6<0.05)
+truediscoveriesQ6=sum(pvals100Q6<0.05)
+falsediscoveriesQ6=sum(pvals900Q6<0.05)
+
+rejectionsQ6
+truediscoveriesQ6
+falsediscoveriesQ6
+```
+
+FDR
+```{r}
+falsediscoveriesQ6/(falsediscoveriesQ6+truediscoveriesQ6)
+```
+
+I expect ~142 rejections, more than before due to increase n. Increasing the n also increased the FDR. My new FDR is 0.31.
+
+FNR
+```{r}
+truenondiscoveriesQ6=sum(pvals100Q6>0.05)
+falsenondiscoveriesQ6=sum(pvals900Q6>0.05)
+falsenondiscoveriesQ6/(falsenondiscoveriesQ6+truenondiscoveriesQ6)
+```
+
+My new FNR is 99.7%.
+
+
+f) What are your estimated FDR and FNR if you use the Bonferroni, BH and Storey methods and reject at "adjusted p"<0.05?
+
+I get the adjusted p-values for bonferroni, and calculate the rejections.
+```{r}
+BFS2Q6=p.adjust(pvalsS2Q6,method = "bonferroni")
+rejectionsBFS2Q6=sum(BFS2Q6<0.05)
+rejectionsBFS2Q6
+```
+
+I get the adjusted p-values for BH and calculate the number of rejections
+```{r}
+BHS2Q6=p.adjust(pvalsS2Q6, method = "BH")
+rejectionsBHS2Q6=sum(BHS2Q6<0.05)
+rejectionsBHS2Q6
+```
+
+I get the q-value with Storey's and calculate rejections
+```{r}
+StoreyQ6=qvalue(pvalsS2Q6, fdr.level = 0.05)
+rejectionsStoreyQ6=sum(StoreyQ6$significant==TRUE)
+rejectionsStoreyQ6
+```
+
+The number of rejections is higher than when calculated with n=5 (34 for boferroni, 87 for BH, and 94 for Storeys), as expected. 
+
+
+g) What is your estimate of \(\pi_0\)?
+
+```{r}
+pi0S(pvalsS2Q6)
+```
+
+
+Random data sets
+
+```{r correlated}
+N=10
+noiseT=matrix(rnorm(N*M,mean=8,sd=sqrt(0.5)),nr=M, nc=N,byrow=T)
+noiseC=matrix(rnorm(N*M,mean=8,sd=sqrt(0.5)),nr=M, nc=N,byrow=T)
+clustT= matrix(rnorm(N,sd=sqrt(0.5)),nr=M, nc=N,byrow=T) 
+clustC=matrix(rnorm(N,sd=sqrt(0.5)),nr=M, nc=N,byrow=T)
+sim.data3=cbind((noiseT+clustT),(noiseC+clustC))
+```
+
+**********
+## Homework Question 7 (4 points)
+
+a) *sim.data1* has independent noise and no differences in mean, while *sim.data3* has dependent noise and no differences in mean.  To check the levels of noise and the means, draw histograms of the means and variances for each gene for the 1000 genes in *sim.data1* and separately for the 1000 genes in *sim.data3*.  Do these histograms look similar?
+
+```{r}
+hist(apply(simdata1,1,mean))
+hist(apply(sim.data3,1,mean))
+hist(apply(simdata1,1,var))
+hist(apply(sim.data3,1,var))
+```
+
+As expected, the means histograms look similar, and the variance histograms are different.
+
+
+b) Do the t-tests using *sim.data3* and obtain a histogram of the p-values.  Recall that none of the simulated genes differentially express.  Does the histogram have the expected shape?  Using the BH adjusted p-values and reject for p<0.05.  How many rejections are there?
+
+```{r}
+myTrt4=c("T","T","T","T","T","T","T","T","T","T","C","C","C","C","C","C","C","C","C","C")
+pvalsQ7=apply(sim.data3,1,tp,myTrt4)
+hist(pvalsQ7)
+```
+
+The histogram shows more high p-values and less low p-values.I would have expected a more uniform graph, with the classic peak on the left tapering down to a flat histogram. 
+
+rejections with BH = none (as expected)
+```{r}
+BHQ7=p.adjust(pvalsQ7, method = "BH")
+sum(BHQ7<0.05)
+```
+
+c) Generate random noise 2 more times and repeat part b.  What do you notice?
+
+```{r}
+noiseTb=matrix(rnorm(N*M,mean=8,sd=sqrt(0.5)),nr=M, nc=N,byrow=T)
+noiseCb=matrix(rnorm(N*M,mean=8,sd=sqrt(0.5)),nr=M, nc=N,byrow=T)
+clustTb= matrix(rnorm(N,sd=sqrt(0.5)),nr=M, nc=N,byrow=T) 
+clustCb=matrix(rnorm(N,sd=sqrt(0.5)),nr=M, nc=N,byrow=T)
+sim.data3b=cbind((noiseTb+clustTb),(noiseCb+clustCb))
+pvalsQ7b=apply(sim.data3b,1,tp,myTrt4)
+hist(pvalsQ7b)
+BHQ7b=p.adjust(pvalsQ7b, method = "BH")
+sum(BHQ7b<0.05)
+```
+
+```{r}
+noiseTc=matrix(rnorm(N*M,mean=8,sd=sqrt(0.5)),nr=M, nc=N,byrow=T)
+noiseCc=matrix(rnorm(N*M,mean=8,sd=sqrt(0.5)),nr=M, nc=N,byrow=T)
+clustTc= matrix(rnorm(N,sd=sqrt(0.5)),nr=M, nc=N,byrow=T) 
+clustCc=matrix(rnorm(N,sd=sqrt(0.5)),nr=M, nc=N,byrow=T)
+sim.data3c=cbind((noiseTc+clustTc),(noiseCc+clustCc))
+pvalsQ7c=apply(sim.data3c,1,tp,myTrt4)
+hist(pvalsQ7c)
+BHQ7c=p.adjust(pvalsQ7c, method = "BH")
+sum(BHQ7c<0.05)
+```
+
+The histograms are different but they are still uniform when there are no differentially expressed genes. I continue to get zero rejections.
+
+
+d) What do you think could happen when there are some truly differentially expressing genes?
+
+I would expect to have p-values less than 0.05, but if the data are correlated I may not be able to see the differences. It is important to check the graphs before analyzing the results. 
+
+***********
+
+
+```{r}
+sessionInfo()
+```
